@@ -1,11 +1,17 @@
 #!/bin/bash
 #
-# To encode the binary file, run this command in the directory where it's lacated.
+# To encode the binary file, run this command in the directory where it's located.
 # 	$ compress < binary | uuencode -m binary.Z
 #
-function key    { echo -n "${1}" | sed 's/^/"/; s/=[^&]*&/" "/g; s/=.*$/"/'; }
-function decode { printf '%b' "${1//%/\\x}" | sed 's/^/[/; s/=/]="/g; s/\&/" [/g; s/$/"/'; }
-function encode { for ((p=0; p<${#1}; p++)); do c=${1:$p:1}; case "${c}" in [-_.~a-zA-Z0-9]) echo -n "${c}";; *) printf '%%%02x' "'${c}"; esac; done; }
+function decode { /usr/bin/printf '%b' "${1//%/\\x}"; }
+function encode { for ((p=0; p<${#1}; p++)); do c=${1:$p:1}; case "${c}" in
+ [-_.~a-zA-Z0-9]) echo -n "${c}";; *) /usr/bin/printf '%%%02x' "'${c}"; esac; done; }
+function expire { /bin/date --utc --date=${1=now} "+%a, %d-%b-%y %H:%M:%S GMT"; }
+function sessid { /usr/bin/md5sum <<< "$(/bin/date +%s)" | /bin/awk '{print $1}'; }
+function form_p { /bin/sed 's/^/[/; s/=/]="/g; s/\&/" [/g; s/$/"/' <<< "${1}"; }
+function fkey_p { /bin/sed 's/^/"/; s/=[^&]*&/" "/g; s/=.*$/"/' <<< "${1}"; }
+function cook_p { /bin/sed 's/^/[/; s/=/]="/g; s/; /" [/g; s/$/"/' <<< "${1}"; }
+function ckey_p { /bin/sed 's/^/"/; s/=[^;]*; /" "/g; s/=.*$/"/' <<< "${1}"; }
 
 case ${PATH_INFO} in 
 /favicon.ico) echo -ne "Content-Type: image/x-icon\n\n" ; /usr/bin/uudecode -o /dev/stdout << EOF 2>/dev/null | /bin/zcat
@@ -70,20 +76,21 @@ EOF
 ;;
 *)
 [ "${REQUEST_METHOD}" = "POST" ] && read QUERY_STRING ;
-[ -z ${QUERY_STRING} ] || eval $(echo -n "declare -A FORM=($(decode ${QUERY_STRING})) ; FORM_KEY=($(key ${QUERY_STRING}))") ;
-echo -ne "Set-Cookie: sid=$(md5sum <<< "$(/bin/date +%s)" | awk '{print $1}'); expires=$(/bin/date --utc --date="30min" "+%a, %d-%b-%y %H:%M:%S GMT")\n"\
-"Set-Cookie: name=$(encode "Herman Strom"); expires=$(/bin/date --utc --date="30min" "+%a, %d-%b-%y %H:%M:%S GMT")\n"\
-"Set-Cookie: last=Strom; expires=$(/bin/date --utc "+%a, %d-%b-%y %H:%M:%S GMT")\n"\
-"Set-Cookie: first=Herman; expires=$(/bin/date --utc "+%a, %d-%b-%y %H:%M:%S GMT")\n"\
+[ -z ${QUERY_STRING} ] || eval $(echo -n "declare -A FORM=($(decode "$(form_p "${QUERY_STRING}")")); FORM_KEY=($(fkey_p "${QUERY_STRING}"))");
+[ -z ${HTTP_COOKIE} ] || eval $(echo -n "declare -A COOKIE=($(decode "$(cook_p "${HTTP_COOKIE}")")); COOKIE_KEY=($(ckey_p "${HTTP_COOKIE}"))");
+echo -ne "Set-Cookie: sid=$(sessid); expires=$(expire 30min)\nSet-Cookie: name=$(encode "Herman Strom"); expires=$(expire 30min)\nSet-Cookie: first=Herman; expires=$(expire now)\n"\
 "Content-Type: text/html\n\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.1//EN\" \"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd\">\n"\
 "<html><head>\n<title>Environment</title>\n<link rel=\"icon\" href=\"http://${SERVER_NAME}${SCRIPT_NAME}/favicon.ico\">\n"\
 "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body>\n"\
-"<table><tr><th><img src=\"http://${SERVER_NAME}${SCRIPT_NAME}/logo.png\"></th><th><form method=post><table>"\
-"<tr><th>User Name:<input type=\"text\" name=\"username\"></th><th>Password:<input type=\"password\" name=\"password\">"\
-"</th><th><input type=\"submit\" name=\"submit\" value=\"Login\"></th></tr></table></form></th></tr>\n"\
+"<table><tr><th><img src=\"http://${SERVER_NAME}${SCRIPT_NAME}/logo.png\"></th><th><form method=post><table style=\"float:right;\">"\
+"<tr><th style=\"text-align:left; font-family:verdana; font-size:8px\">User Name</th>"\
+"<th style=\"text-align:left; font-family:verdana; font-size:8px\">Password</th><th></th></tr>"\
+"<tr><th><input type=\"text\" size=\"15\" name=\"username\"></th><th><input type=\"password\" size=\"15\" name=\"password\"></th>"\
+"<th><input type=\"submit\" name=\"submit\" value=\"Login\"></th></tr></table></form></th></tr>\n"\
 "<tr><td></td><td><pre>$(/bin/env)</pre><pre>$(/usr/bin/mysql <<< "SELECT user,host,password FROM mysql.user;")</pre>\n"\
-"$([ ${#FORM[@]} -gt 0 ] && echo -ne "<pre>$(for KEY in ${FORM_KEY[@]} ; do echo "\$FORM[${KEY}]=\"${FORM[$KEY]}\"" ; done)\n\n"\
-"\$FORM=($(decode ${QUERY_STRING}));\n\$FORM_KEY=($(key ${QUERY_STRING}));</pre>"; )</form></td></tr></table>"\
+"$([ ${#FORM[@]} -gt 0 ] && echo -ne "<pre>$(for k in ${FORM_KEY[@]} ; do echo -n "FORM[${k}]=\"${FORM[$k]}\"; " ; done)FORM=($(decode "$(form_p "${QUERY_STRING}")")); FORM_KEY=($(fkey_p "${QUERY_STRING}"));</pre>";)"\
+"$([ ${#COOKIE[@]} -gt 0 ] && echo -ne "<pre>$(for k in ${COOKIE_KEY[@]} ; do echo -n "COOKIE[${k}]=\"${COOKIE[$k]}\"; " ; done)COOKIE=($(decode "$(cook_p "${HTTP_COOKIE}")")); COOKIE_KEY=($(ckey_p "${HTTP_COOKIE}"));</pre>";)"\
+"</form></td></tr></table>"\
 "</body></html>" ;;
 esac
 
