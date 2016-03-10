@@ -1,12 +1,12 @@
-#!/bin/bash
+#!/bin/env bash
 #
 # To encode the binary file, run this command in the directory where it's located.
-# 	$ compress < binary | uuencode -m binary.Z
+# 	$ compress < binary | base64
 #
 function decode { /usr/bin/printf '%b' "${1//%/\\x}"; }
 function encode { for ((p=0; p<${#1}; p++)); do c=${1:$p:1}; case "${c}" in
  [-_.~a-zA-Z0-9]) echo -n "${c}";; *) /usr/bin/printf '%%%02x' "'${c}"; esac; done; }
-function expire { /bin/date --utc --date=${1=now} "+%a, %d-%b-%y %H:%M:%S GMT"; }
+function expire { /bin/date --utc --date=${1:-now} "+%a, %d-%b-%y %H:%M:%S GMT"; }
 function sessid { /usr/bin/md5sum <<< "$(/bin/date +%s)" | /bin/awk '{print $1}'; }
 function form_p { /bin/sed 's/^/[/; s/=/]="/g; s/\&/" [/g; s/$/"/' <<< "${1}"; }
 function fkey_p { /bin/sed 's/^/"/; s/=[^&]*&/" "/g; s/=.*$/"/' <<< "${1}"; }
@@ -14,16 +14,11 @@ function cook_p { /bin/sed 's/^/[/; s/=/]="/g; s/; /" [/g; s/$/"/' <<< "${1}"; }
 function ckey_p { /bin/sed 's/^/"/; s/=[^;]*; /" "/g; s/=.*$/"/' <<< "${1}"; }
 
 case ${PATH_INFO} in 
-/favicon.ico) echo -ne "Content-Type: image/x-icon\n\n" ; /usr/bin/uudecode -o /dev/stdout << EOF 2>/dev/null | /bin/zcat
-begin-base64 644 favicon.ico.Z
+/favicon.ico) echo -ne "Content-Type: image/x-icon\n\n" ; /usr/bin/base64 -d <<< '
 H52QAAAEEAgAgsGACFEMBGAhIUIICEEgHEgAocWLFyFijBOHEIB8IAGsGwkgVKhRAJo0oQLg2bNmAgM4ivkKIbaYYgAoUJACoTKEzC7+G3rRnVGjHo4qraH0
 aAsfSsNBG0eKiDsRRquUa9VtSrRyRAAQ4NoqCo1Ld+7YaaUNxh5czJgh06ONDbJFu/ImO4XsUBpeu5gl4nVIUzbAt9TgypUKzTJcarqlyoSLUeBO3bpt02WJ
-2SGu3bLZ2mPLVjdtp/Es06SpWyuMsGPLnk27NgA=
-===
-EOF
-;;
-/logo.png) echo -ne "Content-Type: image/png\n\n" ; /usr/bin/uudecode -o /dev/stdout << EOF 2>/dev/null | /bin/zcat
-begin-base64 644 logo.png.Z
+2SGu3bLZ2mPLVjdtp/Es06SpWyuMsGPLnk27NgA=' | /bin/zcat ;;
+/logo.png) echo -ne "Content-Type: image/png\n\n" ; /usr/bin/base64 -d <<< '
 H52QiaA4OdJAgQYFABI2SIKEiJSEAFhAZIHAAEQPhLQEgBhgjpQjQgC4csYhXcIAWdJQwUIHSxMmOsa8aeMiDJk3Ysq4wNMGDsSEPPDo4AmnTRk6YUDwZONm
 ztAeImziLKOjqQ6jSF+IUDq0J501UF1CATHkjZwyIGq4oOEChggfCkDI5SGHjBkdUogYUdqGqdO6ZqCioUMHjo4XL+4odnFnhguzZ17EyEH5BQwZL2TIaAG4
 xZw8bpDiadF0xNu4clPTtauDSJk5Y+SkgUMnzRs3IADrCCPmTR06UEWgTk089VKrtc0EFjG48OEXTWvezOlCZpsXyc1IbqsVbnHiPLLreCK7TOgwtW/7iMED
@@ -70,15 +65,12 @@ EAuhIAaEYA3vgH2x0ApbUAFIoAdPUAzr8Al3wA5IoAbpgA2RMAqPoAUAkAJg0AeDoAVNoAYW8AAm0AE5
 EANKwAH9IA1ooAEmIAo9cAI3cAQB4A26UAbLgAXq4ANjcA6I8AEDcASF0AThcAPGIA024A2+UA3zqQSKIAMlQALGAAovkA3H8Aq9sAok4AB6EAcMUApX0A31
 YA2b8Aaa4AKnsAx8wA+RcATGoAF7IAidIA8dAAM+IA7gsA8d7Ac10Adf0AkIJgIXcAKM8A014AOUALSoQAuUwAWbAAp8IAKrwA9pkA1kDAZNuQpUwD/cwAOB
 gAR9QA31sATyQAj/sA0r4Aa2QAOwoAn84AE15QEP0AfBEAS28gr68AGLwATJeAIawAzigA5KIAey8AfdoATqIAH9wA8xYAX9MAOe9Q3HkAwHkAcUcA3z0AMu
-8Mg0AAEhMAz/IA/NwAk/kQRF4ARE4ApCAAaCAA==
-====
-EOF
-;;
+8Mg0AAEhMAz/IA/NwAk/kQRF4ARE4ApCAAaCAA==' | /bin/zcat ;;
 *)
 [ "${REQUEST_METHOD}" = "POST" ] && read QUERY_STRING ;
 [ -z ${QUERY_STRING} ] || eval $(echo -n "declare -A FORM=($(decode "$(form_p "${QUERY_STRING}")")); FORM_KEY=($(fkey_p "${QUERY_STRING}"))");
 [ -z ${HTTP_COOKIE} ] || eval $(echo -n "declare -A COOKIE=($(decode "$(cook_p "${HTTP_COOKIE}")")); COOKIE_KEY=($(ckey_p "${HTTP_COOKIE}"))");
-echo -ne "Set-Cookie: sid=$(sessid); expires=$(expire 30min)\nSet-Cookie: name=$(encode "Herman Strom"); expires=$(expire 30min)\nSet-Cookie: first=Herman; expires=$(expire now)\n"\
+echo -ne "Set-Cookie: sid=$(sessid); expires=$(expire 30min)\nSet-Cookie: name=$(encode "Herman Strom"); expires=$(expire 30min)\nSet-Cookie: first=Herman; expires=$(expire)\n"\
 "Content-Type: text/html\n\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.1//EN\" \"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd\">\n"\
 "<html><head>\n<title>Environment</title>\n<link rel=\"icon\" href=\"http://${SERVER_NAME}${SCRIPT_NAME}/favicon.ico\">\n"\
 "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body>\n"\
