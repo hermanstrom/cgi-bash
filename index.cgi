@@ -3,22 +3,36 @@
 # To encode the binary file, run this command in the directory where it's located.
 # 	$ compress < binary | base64
 #
-function decode { /usr/bin/printf '%b' "${1//%/\\x}"; }
-function encode { for ((p=0; p<${#1}; p++)); do c=${1:$p:1}; case "${c}" in
+decode() { /usr/bin/printf '%b' "${1//%/\\x}"; }
+function encode() { for ((p=0; p<${#1}; p++)); do c=${1:$p:1}; case "${c}" in
  [-_.~a-zA-Z0-9]) echo -n "${c}";; *) /usr/bin/printf '%%%02x' "'${c}"; esac; done; }
-function expire { /bin/date --utc --date=${1:-now} "+%a, %d-%b-%y %H:%M:%S GMT"; }
-function sessid { /usr/bin/md5sum <<< "$(/bin/date +%s)" | /bin/awk '{print $1}'; }
-function form_p { /bin/sed 's/^/[/; s/=/]="/g; s/\&/" [/g; s/$/"/' <<< "${1}"; }
-function fkey_p { /bin/sed 's/^/"/; s/=[^&]*&/" "/g; s/=.*$/"/' <<< "${1}"; }
-function cook_p { /bin/sed 's/^/[/; s/=/]="/g; s/; /" [/g; s/$/"/' <<< "${1}"; }
-function ckey_p { /bin/sed 's/^/"/; s/=[^;]*; /" "/g; s/=.*$/"/' <<< "${1}"; }
+expire() { /bin/date --utc --date=${1:-now} "+%a, %d-%b-%y %H:%M:%S GMT"; }
+sessid() { /usr/bin/md5sum <<< "$(/bin/date +%s)" | /bin/awk '{print $1}'; }
+form_p() { /bin/sed 's/^/[/; s/=/]="/g; s/\&/" [/g; s/$/"/' <<< "${1}"; }
+fkey_p() { /bin/sed 's/^/"/; s/=[^&]*&/" "/g; s/=.*$/"/' <<< "${1}"; }
+cook_p() { /bin/sed 's/^/[/; s/=/]="/g; s/; /" [/g; s/$/"/' <<< "${1}"; }
+ckey_p() { /bin/sed 's/^/"/; s/=[^;]*; /" "/g; s/=.*$/"/' <<< "${1}"; }
+authen() { [[ ${#COOKIE[@]} -gt 0 ]] && echo -ne "<form method=post><table style=\"float:right;\">"\
+"<tr><th style=\"text-align:left; font-family:verdana; font-size:12px\">${COOKIE[name]}</th>"\
+"<th><input type=\"submit\" name=\"submit\" value=\"Logout\"></th></tr></table></form>";
+ [[ ${#COOKIE[@]} -eq 0 ]] && echo -ne "<form method=post><table style=\"float:right;\">"\
+"<tr><th style=\"text-align:left; font-family:verdana; font-size:8px\">User Name</th>"\
+"<th style=\"text-align:left; font-family:verdana; font-size:8px\">Password</th><th></th></tr>"\
+"<tr><th><input type=\"text\" size=\"15\" name=\"username\"></th>"\
+"<th><input type=\"password\" size=\"15\" name=\"password\"></th>"\
+"<th><input type=\"submit\" name=\"submit\" value=\"Login\"></th></tr></table></form>"; }
 
+[[ "${REQUEST_METHOD}" = "POST" ]] && read QUERY_STRING ;
+[[ -z ${QUERY_STRING} ]] || eval $(echo -n "declare -A FORM=($(decode "$(form_p "${QUERY_STRING}")")); FORM_KEY=($(fkey_p "${QUERY_STRING}"))");
+[[ -z ${HTTP_COOKIE} ]] || eval $(echo -n "declare -A COOKIE=($(decode "$(cook_p "${HTTP_COOKIE}")")); COOKIE_KEY=($(ckey_p "${HTTP_COOKIE}"))");
+[[ "${FORM[submit]}" = "Login" ]] && echo -ne "Set-Cookie: sid=$(sessid); expires=$(expire 30min)\nSet-Cookie: name=$(encode "Herman Strom"); expires=$(expire 30min)\nLocation: http://${SERVER_NAME}/${SCRIPT_NAME}\n\n";
+[[ "${FORM[submit]}" = "Logout" ]] && echo -ne "Set-Cookie: sid=; expires=$(expire)\nSet-Cookie: name=; expires=$(expire)\nLocation: http://${SERVER_NAME}/${SCRIPT_NAME}\n\n";
 case ${PATH_INFO} in 
-/favicon.ico) echo -ne "Content-Type: image/x-icon\n\n" ; /usr/bin/base64 -d <<< '
+ /favicon.ico) echo -ne "Content-Type: image/x-icon\n\n" ; /usr/bin/base64 -d <<< '
 H52QAAAEEAgAgsGACFEMBGAhIUIICEEgHEgAocWLFyFijBOHEIB8IAGsGwkgVKhRAJo0oQLg2bNmAgM4ivkKIbaYYgAoUJACoTKEzC7+G3rRnVGjHo4qraH0
 aAsfSsNBG0eKiDsRRquUa9VtSrRyRAAQ4NoqCo1Ld+7YaaUNxh5czJgh06ONDbJFu/ImO4XsUBpeu5gl4nVIUzbAt9TgypUKzTJcarqlyoSLUeBO3bpt02WJ
 2SGu3bLZ2mPLVjdtp/Es06SpWyuMsGPLnk27NgA=' | /bin/zcat ;;
-/logo.png) echo -ne "Content-Type: image/png\n\n" ; /usr/bin/base64 -d <<< '
+ /logo.png) echo -ne "Content-Type: image/png\n\n" ; /usr/bin/base64 -d <<< '
 H52QiaA4OdJAgQYFABI2SIKEiJSEAFhAZIHAAEQPhLQEgBhgjpQjQgC4csYhXcIAWdJQwUIHSxMmOsa8aeMiDJk3Ysq4wNMGDsSEPPDo4AmnTRk6YUDwZONm
 ztAeImziLKOjqQ6jSF+IUDq0J501UF1CATHkjZwyIGq4oOEChggfCkDI5SGHjBkdUogYUdqGqdO6ZqCioUMHjo4XL+4odnFnhguzZ17EyEH5BQwZL2TIaAG4
 xZw8bpDiadF0xNu4clPTtauDSJk5Y+SkgUMnzRs3IADrCCPmTR06UEWgTk089VKrtc0EFjG48OEXTWvezOlCZpsXyc1IbqsVbnHiPLLreCK7TOgwtW/7iMED
@@ -66,24 +80,14 @@ EANKwAH9IA1ooAEmIAo9cAI3cAQB4A26UAbLgAXq4ANjcA6I8AEDcASF0AThcAPGIA024A2+UA3zqQSK
 YA2b8Aaa4AKnsAx8wA+RcATGoAF7IAidIA8dAAM+IA7gsA8d7Ac10Adf0AkIJgIXcAKM8A014AOUALSoQAuUwAWbAAp8IAKrwA9pkA1kDAZNuQpUwD/cwAOB
 gAR9QA31sATyQAj/sA0r4Aa2QAOwoAn84AE15QEP0AfBEAS28gr68AGLwATJeAIawAzigA5KIAey8AfdoATqIAH9wA8xYAX9MAOe9Q3HkAwHkAcUcA3z0AMu
 8Mg0AAEhMAz/IA/NwAk/kQRF4ARE4ApCAAaCAA==' | /bin/zcat ;;
-*)
-[ "${REQUEST_METHOD}" = "POST" ] && read QUERY_STRING ;
-[ -z ${QUERY_STRING} ] || eval $(echo -n "declare -A FORM=($(decode "$(form_p "${QUERY_STRING}")")); FORM_KEY=($(fkey_p "${QUERY_STRING}"))");
-[ -z ${HTTP_COOKIE} ] || eval $(echo -n "declare -A COOKIE=($(decode "$(cook_p "${HTTP_COOKIE}")")); COOKIE_KEY=($(ckey_p "${HTTP_COOKIE}"))");
-echo -ne "Set-Cookie: sid=$(sessid); expires=$(expire 30min)\nSet-Cookie: name=$(encode "Herman Strom"); expires=$(expire 30min)\nSet-Cookie: first=Herman; expires=$(expire)\n"\
-"Content-Type: text/html\n\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.1//EN\" \"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd\">\n"\
+*) echo -ne "Content-Type: text/html\n\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.1//EN\" \"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd\">\n"\
 "<html><head>\n<title>Environment</title>\n<link rel=\"icon\" href=\"http://${SERVER_NAME}${SCRIPT_NAME}/favicon.ico\">\n"\
 "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body>\n"\
-"<table><tr><th><img src=\"http://${SERVER_NAME}${SCRIPT_NAME}/logo.png\"></th><th><form method=post><table style=\"float:right;\">"\
-"<tr><th style=\"text-align:left; font-family:verdana; font-size:8px\">User Name</th>"\
-"<th style=\"text-align:left; font-family:verdana; font-size:8px\">Password</th><th></th></tr>"\
-"<tr><th><input type=\"text\" size=\"15\" name=\"username\"></th><th><input type=\"password\" size=\"15\" name=\"password\"></th>"\
-"<th><input type=\"submit\" name=\"submit\" value=\"Login\"></th></tr></table></form></th></tr>\n"\
+"<table><tr><th><img src=\"http://${SERVER_NAME}${SCRIPT_NAME}/logo.png\"></th><th>$(authen)</th></tr>\n"\
 "<tr><td></td><td><pre>$(/bin/env)</pre><pre>$(/usr/bin/mysql <<< "SELECT user,host,password FROM mysql.user;")</pre>\n"\
-"$([ ${#FORM[@]} -gt 0 ] && echo -ne "<pre>$(for k in ${FORM_KEY[@]} ; do echo -n "FORM[${k}]=\"${FORM[$k]}\"; " ; done)FORM=($(decode "$(form_p "${QUERY_STRING}")")); FORM_KEY=($(fkey_p "${QUERY_STRING}"));</pre>";)"\
-"$([ ${#COOKIE[@]} -gt 0 ] && echo -ne "<pre>$(for k in ${COOKIE_KEY[@]} ; do echo -n "COOKIE[${k}]=\"${COOKIE[$k]}\"; " ; done)COOKIE=($(decode "$(cook_p "${HTTP_COOKIE}")")); COOKIE_KEY=($(ckey_p "${HTTP_COOKIE}"));</pre>";)"\
-"</form></td></tr></table>"\
-"</body></html>" ;;
+"$([[ ${#FORM[@]} -gt 0 ]] && echo -ne "<pre>$(for k in ${FORM_KEY[@]} ; do echo -n "FORM[${k}]=\"${FORM[$k]}\"; " ; done)</pre>";)"\
+"$([[ ${#COOKIE[@]} -gt 0 ]] && echo -ne "<pre>$(for k in ${COOKIE_KEY[@]} ; do echo -n "COOKIE[${k}]=\"${COOKIE[$k]}\"; " ; done)</pre>";)"\
+"</td></tr></table></body></html>" ;;
 esac
 
 exit 0 ;
