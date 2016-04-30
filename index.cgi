@@ -3,6 +3,7 @@
 # To encode the binary file, run this command in the directory where it's located.
 # 	$ compress < binary | base64
 #
+DBNAME=cgibash; TABLE=(user path node session); declare -A COLUMN=([${TABLE[0]}]='uid uname geos email passwd' [${TABLE[1]}]='vhost fpath nodeid' [${TABLE[2]}]='nodeid type coding data revise ctime uids' [${TABLE[3]}]='sid ctime uid');
 decode() { /usr/bin/printf '%b' "${1//%/\\x}"; }
 encode() { for ((p=0; p<${#1}; p++)); do c=${1:$p:1}; case "${c}" in
  [-_.~a-zA-Z0-9]) echo -n "${c}";; *) /usr/bin/printf '%%%02x' "'${c}"; esac; done; }
@@ -12,26 +13,32 @@ form_p() { /bin/sed 's/^/[/; s/=/]="/g; s/\&/" [/g; s/$/"/' <<< "${1}"; }
 fkey_p() { /bin/sed 's/^/"/; s/=[^&]*&/" "/g; s/=.*$/"/' <<< "${1}"; }
 cook_p() { /bin/sed 's/^/[/; s/=/]="/g; s/; /" [/g; s/$/"/' <<< "${1}"; }
 ckey_p() { /bin/sed 's/^/"/; s/=[^;]*; /" "/g; s/=.*$/"/' <<< "${1}"; }
-authen() { [[ ${#COOKIE[@]} -gt 0 ]] && echo -ne "<form method=post><table style=\"float:right;\">"\
-"<tr><th style=\"text-align:left; font-family:verdana; font-size:12px\">${COOKIE[name]}</th>"\
-"<th><input type=\"submit\" name=\"submit\" value=\"Logout\"></th></tr></table></form>";
- [[ ${#COOKIE[@]} -eq 0 ]] && echo -ne "<form method=post><table style=\"float:right;\">"\
-"<tr><th style=\"text-align:left; font-family:verdana; font-size:8px\">User Name</th>"\
-"<th style=\"text-align:left; font-family:verdana; font-size:8px\">Password</th><th></th></tr>"\
-"<tr><th><input type=\"text\" size=\"15\" name=\"username\"></th>"\
-"<th><input type=\"password\" size=\"15\" name=\"password\"></th>"\
-"<th><input type=\"submit\" name=\"submit\" value=\"Login\"></th></tr></table></form>"; }
+authen() { [[ ${#COOKIE[@]} -gt 0 ]] && echo -ne "<form method=post><table style=\"float:right;\"><tr><td style=\"text-align:left;font-family:verdana;font-size:12px\">${COOKIE[name]}</td><td><input type=\"submit\" name=\"submit\" value=\"Logout\"></td></tr></table></form>";
+ [[ ${#COOKIE[@]} -eq 0 ]] && echo -ne "<form method=post><table style=\"float:right;\"><tr><td style=\"text-align:left;font-family:verdana;font-size:8px\">User Name</td><td style=\"text-align:left; font-family:verdana; font-size:8px\">Password</td><td></td></tr>"\
+"<tr><td><input type=\"text\" size=\"15\" name=\"username\"></td><td><input type=\"password\" size=\"15\" name=\"password\"></td><td><input type=\"submit\" name=\"submit\" value=\"Login\"></td></tr>"\
+"$([[ -n ${FORM[message]} ]] && echo -ne "<tr><td colspan=3 style=\"text-align:left;font-family:verdana;font-size:14px;color:red;\">${FORM[message]}</td></tr>";)</table></form>"; }
+passwd() { [[ -z ${1} ]] && return 1; /usr/bin/mysql -N -B -e "SELECT PASSWORD('${1}');"; }; 
+dbuser() { [[ -n ${1} ]] && /usr/bin/mysql -N -B -e "SELECT * FROM ${DBNAME}.user WHERE uname='${1}';";
+           [[ -z ${1} ]] && /usr/bin/mysql -N -B -e "SELECT * FROM ${DBNAME}.user;"; }
 
-DBNAME='cgibash'; /usr/bin/mysql -e "CREATE DATABASE IF NOT EXISTS ${DBNAME} CHARACTER SET utf8;";
-/usr/bin/mysql -e "CREATE TABLE IF NOT EXISTS ${DBNAME}.user (uid BIGINT UNSIGNED AUTO_INCREMENT, uname VARCHAR(24), geos VARCHAR(64), passwd VARCHAR(48), PRIMARY KEY (uid), INDEX uname (uname)) TYPE=innodb DEFAULT CHARSET=utf8;";
-/usr/bin/mysql -e "CREATE TABLE IF NOT EXISTS ${DBNAME}.path (vhost VARCHAR(64), fpath VARCHAR(64), nodeid VARCHAR(144), PRIMARY KEY (vhost, fpath), INDEX nodeid (nodeid)) TYPE=innodb DEFAULT CHARSET=utf8;";
-/usr/bin/mysql -e "CREATE TABLE IF NOT EXISTS ${DBNAME}.node (nodeid VARCHAR(144), type VARCHAR(24), coding VARCHAR(24), data LONGBLOB, revise VARCHAR(144), ctime BIGINT UNSIGNED, uids LONGTEXT, PRIMARY KEY (nodeid), INDEX revise (revise), INDEX ctime (ctime)) TYPE=innodb DEFAULT CHARSET=utf8;";
-/usr/bin/mysql -e "CREATE TABLE IF NOT EXISTS ${DBNAME}.session (sid VARCHAR(42), ctime BIGINT UNSIGNED, uid BIGINT UNSIGNED, PRIMARY KEY (sid), INDEX ctime (ctime), INDEX uid (uid)) TYPE=innodb DEFAULT CHARSET=utf8;";
+for QUERY in "CREATE DATABASE IF NOT EXISTS ${DBNAME} CHARACTER SET utf8;"\
+ "CREATE TABLE IF NOT EXISTS ${DBNAME}.user (uid BIGINT UNSIGNED AUTO_INCREMENT, uname VARCHAR(24), geos VARCHAR(64), email VARCHAR(64), passwd VARCHAR(48), PRIMARY KEY (uname), INDEX uname (uid)) TYPE=innodb DEFAULT CHARSET=utf8;"\
+ "CREATE TABLE IF NOT EXISTS ${DBNAME}.path (vhost VARCHAR(64), fpath VARCHAR(64), nodeid VARCHAR(144), PRIMARY KEY (vhost, fpath), INDEX nodeid (nodeid)) TYPE=innodb DEFAULT CHARSET=utf8;"\
+ "CREATE TABLE IF NOT EXISTS ${DBNAME}.node (nodeid VARCHAR(144), type VARCHAR(24), coding VARCHAR(24), data LONGBLOB, revise VARCHAR(144), ctime BIGINT UNSIGNED, uids LONGTEXT, PRIMARY KEY (nodeid), INDEX revise (revise), INDEX ctime (ctime)) TYPE=innodb DEFAULT CHARSET=utf8;"\
+ "CREATE TABLE IF NOT EXISTS ${DBNAME}.session (sid VARCHAR(42), ctime BIGINT UNSIGNED, uid BIGINT UNSIGNED, PRIMARY KEY (sid), INDEX ctime (ctime), INDEX uid (uid)) TYPE=innodb DEFAULT CHARSET=utf8;"\
+ "INSERT IGNORE INTO ${DBNAME}.user (uid, uname, geos, email, passwd) VALUES (NULL, 'admin', 'Administrator', 'root@localhost', PASSWORD('password'));"; do /usr/bin/mysql -e "${QUERY}"; done;
 
 [[ "${REQUEST_METHOD}" = "POST" ]] && read QUERY_STRING ;
 [[ -z ${QUERY_STRING} ]] || eval $(echo -n "declare -A FORM=($(decode "$(form_p "${QUERY_STRING}")")); FORM_KEY=($(fkey_p "${QUERY_STRING}"))");
 [[ -z ${HTTP_COOKIE} ]] || eval $(echo -n "declare -A COOKIE=($(decode "$(cook_p "${HTTP_COOKIE}")")); COOKIE_KEY=($(ckey_p "${HTTP_COOKIE}"))");
-[[ "${FORM[submit]}" = "Login" ]] && echo -ne "Set-Cookie: sid=$(sessid); expires=$(expire 30min)\nSet-Cookie: name=$(encode "Herman Strom"); expires=$(expire 30min)\nLocation: http://${SERVER_NAME}${SCRIPT_NAME}\n\n";
+
+declare -A ROW; 
+if [[ "${FORM[submit]}" = "Login" ]]; then
+ for column in ${COLUMN[${TABLE[0]}]}; do ROW[${column}]=$(/usr/bin/mysql -N -B -e "SELECT ${column} FROM ${DBNAME}.user WHERE uname='${FORM[username]}';" | tr -d '\n'); done;
+ if [[ $(/usr/bin/wc -l <<< "${ROW[${TABLE[0]}]}") -lt 1 ]]; then FORM[message]="Username incorrect"; unset DBUSER; fi;
+ if [[ "${DBUSER[passwd]}" == "$(passwd "${FORM[password]}" | tr -d '\n')" ]]; then
+  echo -ne "Set-Cookie: sid=$(sessid); expires=$(expire 30min)\nSet-Cookie: name=$(encode "Herman Strom"); expires=$(expire 30min)\nLocation: http://${SERVER_NAME}${SCRIPT_NAME}\n\n";
+ else FORM[message]="Password incorrect"; fi; fi
 [[ "${FORM[submit]}" = "Logout" ]] && echo -ne "Set-Cookie: sid=; expires=$(expire)\nSet-Cookie: name=; expires=$(expire)\nLocation: http://${SERVER_NAME}${SCRIPT_NAME}\n\n";
 case ${PATH_INFO} in 
  /favicon.ico) echo -ne "Content-Type: image/x-icon\n\n" ; /usr/bin/base64 -d <<< '
