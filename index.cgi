@@ -1,51 +1,63 @@
-#!/bin/env bash
+#!/bin/bash
 #
 # To encode the binary file, run this command in the directory where it's located.
 # 	$ compress < binary | base64
 #
-DBNAME=cgibash; TABLE=(user path node session); declare -A COLUMN=([${TABLE[0]}]='uid uname geos email passwd' [${TABLE[1]}]='vhost fpath nodeid' [${TABLE[2]}]='nodeid type coding data revise ctime uids' [${TABLE[3]}]='sid ctime uid');
-decode() { /usr/bin/printf '%b' "${1//%/\\x}"; }
+
+# Variables and functions
+export PATH=/bin:/usr/bin; DBNAME=cgibash; TABLE=(user path node session); 
+declare -A COLUMN=([${TABLE[0]}]='uid uname geos email passwd' [${TABLE[1]}]='vhost fpath nodeid'\
+ [${TABLE[2]}]='nodeid type coding data revise ctime uids' [${TABLE[3]}]='sid ctime uid');
+decode() { printf '%b' "${1//%/\\x}"; }
 encode() { for ((p=0; p<${#1}; p++)); do c=${1:$p:1}; case "${c}" in
- [-_.~a-zA-Z0-9]) echo -n "${c}";; *) /usr/bin/printf '%%%02x' "'${c}"; esac; done; }
-expire() { /bin/date --utc --date=${1:-now} "+%a, %d-%b-%y %H:%M:%S GMT"; }
-sessid() { /usr/bin/md5sum <<< "$(/bin/date +%s)" | /bin/awk '{print $1}'; }
-form_p() { /bin/sed 's/^/[/; s/=/]="/g; s/\&/" [/g; s/$/"/' <<< "${1}"; }
-fkey_p() { /bin/sed 's/^/"/; s/=[^&]*&/" "/g; s/=.*$/"/' <<< "${1}"; }
-cook_p() { /bin/sed 's/^/[/; s/=/]="/g; s/; /" [/g; s/$/"/' <<< "${1}"; }
-ckey_p() { /bin/sed 's/^/"/; s/=[^;]*; /" "/g; s/=.*$/"/' <<< "${1}"; }
+ [-_.~a-zA-Z0-9]) echo -n "${c}";; *) printf '%%%02x' "'${c}"; esac; done; }
+expire() { date --utc --date=${1:-now} "+%a, %d-%b-%y %H:%M:%S GMT"; }
+sessid() { md5sum <<< "$(date +%s)" | awk '{print $1}'; }
+form_p() { sed 's/^/[/; s/=/]="/g; s/\&/" [/g; s/$/"/' <<< "${1}"; }
+fkey_p() { sed 's/^/"/; s/=[^&]*&/" "/g; s/=.*$/"/' <<< "${1}"; }
+cook_p() { sed 's/^/[/; s/=/]="/g; s/; /" [/g; s/$/"/' <<< "${1}"; }
+ckey_p() { sed 's/^/"/; s/=[^;]*; /" "/g; s/=.*$/"/' <<< "${1}"; }
 authen() { [[ ${#COOKIE[@]} -gt 0 ]] && echo -ne "<form method=post><table style=\"float:right;\"><tr><td style=\"text-align:left;font-family:verdana;font-size:12px\">${COOKIE[name]}</td><td><input type=\"submit\" name=\"submit\" value=\"Logout\"></td></tr></table></form>";
  [[ ${#COOKIE[@]} -eq 0 ]] && echo -ne "<form method=post><table style=\"float:right;\"><tr><td style=\"text-align:left;font-family:verdana;font-size:8px\">User Name</td><td style=\"text-align:left; font-family:verdana; font-size:8px\">Password</td><td></td></tr>"\
 "<tr><td><input type=\"text\" size=\"15\" name=\"username\"></td><td><input type=\"password\" size=\"15\" name=\"password\"></td><td><input type=\"submit\" name=\"submit\" value=\"Login\"></td></tr>"\
 "$([[ -n ${FORM[message]} ]] && echo -ne "<tr><td colspan=3 style=\"text-align:left;font-family:verdana;font-size:14px;color:red;\">${FORM[message]}</td></tr>";)</table></form>"; }
-passwd() { [[ -z ${1} ]] && return 1; /usr/bin/mysql -N -B -e "SELECT PASSWORD('${1}');"; }; 
-dbuser() { [[ -n ${1} ]] && /usr/bin/mysql -N -B -e "SELECT * FROM ${DBNAME}.user WHERE uname='${1}';";
-           [[ -z ${1} ]] && /usr/bin/mysql -N -B -e "SELECT * FROM ${DBNAME}.user;"; }
+dbauth() { [[ -z ${1} ]] && return 1; mysql -N -B -e "SELECT PASSWORD('${1}');"; return 0; }; 
+dbuser() { [[ -z ${1} ]] && return 1;
+ [[ $(mysql -N -B -e "SELECT * FROM ${DBNAME}.${TABLE[0]} WHERE uname='${1}';" | wc -l) -eq 0 ]] && return 2;
+ ARRAY=$(for column in ${COLUMN[${TABLE[0]}]}; do echo -n "[${column}]='$(mysql -N -B -e "SELECT ${column} FROM ${DBNAME}.${TABLE[0]} WHERE uname='${1}';")' "; done);
+ echo -n "${ARRAY% }"; return 0; };
 
+# DataBase schema auto create
 for QUERY in "CREATE DATABASE IF NOT EXISTS ${DBNAME} CHARACTER SET utf8;"\
- "CREATE TABLE IF NOT EXISTS ${DBNAME}.user (uid BIGINT UNSIGNED AUTO_INCREMENT, uname VARCHAR(24), geos VARCHAR(64), email VARCHAR(64), passwd VARCHAR(48), PRIMARY KEY (uname), INDEX uname (uid)) TYPE=innodb DEFAULT CHARSET=utf8;"\
- "CREATE TABLE IF NOT EXISTS ${DBNAME}.path (vhost VARCHAR(64), fpath VARCHAR(64), nodeid VARCHAR(144), PRIMARY KEY (vhost, fpath), INDEX nodeid (nodeid)) TYPE=innodb DEFAULT CHARSET=utf8;"\
- "CREATE TABLE IF NOT EXISTS ${DBNAME}.node (nodeid VARCHAR(144), type VARCHAR(24), coding VARCHAR(24), data LONGBLOB, revise VARCHAR(144), ctime BIGINT UNSIGNED, uids LONGTEXT, PRIMARY KEY (nodeid), INDEX revise (revise), INDEX ctime (ctime)) TYPE=innodb DEFAULT CHARSET=utf8;"\
- "CREATE TABLE IF NOT EXISTS ${DBNAME}.session (sid VARCHAR(42), ctime BIGINT UNSIGNED, uid BIGINT UNSIGNED, PRIMARY KEY (sid), INDEX ctime (ctime), INDEX uid (uid)) TYPE=innodb DEFAULT CHARSET=utf8;"\
- "INSERT IGNORE INTO ${DBNAME}.user (uid, uname, geos, email, passwd) VALUES (NULL, 'admin', 'Administrator', 'root@localhost', PASSWORD('password'));"; do /usr/bin/mysql -e "${QUERY}"; done;
+ "CREATE TABLE IF NOT EXISTS ${DBNAME}.${TABLE[0]} (uid BIGINT UNSIGNED AUTO_INCREMENT, uname VARCHAR(24), geos VARCHAR(64), email VARCHAR(64), passwd VARCHAR(48), PRIMARY KEY (uname), INDEX uname (uid)) TYPE=innodb DEFAULT CHARSET=utf8;"\
+ "CREATE TABLE IF NOT EXISTS ${DBNAME}.${TABLE[1]} (vhost VARCHAR(64), fpath VARCHAR(64), nodeid VARCHAR(144), PRIMARY KEY (vhost, fpath), INDEX nodeid (nodeid)) TYPE=innodb DEFAULT CHARSET=utf8;"\
+ "CREATE TABLE IF NOT EXISTS ${DBNAME}.${TABLE[2]} (nodeid VARCHAR(144), type VARCHAR(24), coding VARCHAR(24), data LONGBLOB, revise VARCHAR(144), ctime BIGINT UNSIGNED, uids LONGTEXT, PRIMARY KEY (nodeid), INDEX revise (revise), INDEX ctime (ctime)) TYPE=innodb DEFAULT CHARSET=utf8;"\
+ "CREATE TABLE IF NOT EXISTS ${DBNAME}.${TABLE[3]} (sid VARCHAR(42), ctime BIGINT UNSIGNED, uid BIGINT UNSIGNED, PRIMARY KEY (sid), INDEX ctime (ctime), INDEX uid (uid)) TYPE=innodb DEFAULT CHARSET=utf8;"\
+ "INSERT IGNORE INTO ${DBNAME}.${TABLE[0]} (uid, uname, geos, email, passwd) VALUES (NULL, 'admin', 'Administrator', 'root@localhost', PASSWORD('password'));";
+ do mysql -e "${QUERY}"; done;
 
+# Import FORM and COOKES
 [[ "${REQUEST_METHOD}" = "POST" ]] && read QUERY_STRING ;
-[[ -z ${QUERY_STRING} ]] || eval $(echo -n "declare -A FORM=($(decode "$(form_p "${QUERY_STRING}")")); FORM_KEY=($(fkey_p "${QUERY_STRING}"))");
-[[ -z ${HTTP_COOKIE} ]] || eval $(echo -n "declare -A COOKIE=($(decode "$(cook_p "${HTTP_COOKIE}")")); COOKIE_KEY=($(ckey_p "${HTTP_COOKIE}"))");
+[[ -z ${QUERY_STRING} ]] || eval $(echo -n "declare -A FORM=($(decode "$(form_p "${QUERY_STRING}")")); FORMKEY=($(fkey_p "${QUERY_STRING}"))");
+[[ -z ${HTTP_COOKIE} ]] || eval $(echo -n "declare -A COOKIE=($(decode "$(cook_p "${HTTP_COOKIE}")")); COOKIEKEY=($(ckey_p "${HTTP_COOKIE}"))");
 
-declare -A ROW; 
-if [[ "${FORM[submit]}" = "Login" ]]; then
- for column in ${COLUMN[${TABLE[0]}]}; do ROW[${column}]=$(/usr/bin/mysql -N -B -e "SELECT ${column} FROM ${DBNAME}.user WHERE uname='${FORM[username]}';" | tr -d '\n'); done;
- if [[ $(/usr/bin/wc -l <<< "${ROW[${TABLE[0]}]}") -lt 1 ]]; then FORM[message]="Username incorrect"; unset DBUSER; fi;
- if [[ "${DBUSER[passwd]}" == "$(passwd "${FORM[password]}" | tr -d '\n')" ]]; then
-  echo -ne "Set-Cookie: sid=$(sessid); expires=$(expire 30min)\nSet-Cookie: name=$(encode "Herman Strom"); expires=$(expire 30min)\nLocation: http://${SERVER_NAME}${SCRIPT_NAME}\n\n";
- else FORM[message]="Password incorrect"; fi; fi
-[[ "${FORM[submit]}" = "Logout" ]] && echo -ne "Set-Cookie: sid=; expires=$(expire)\nSet-Cookie: name=; expires=$(expire)\nLocation: http://${SERVER_NAME}${SCRIPT_NAME}\n\n";
+# Process FORM responses
+case ${FORM[submit]} in 
+ Login) if [[ -n ${FORM[username]} ]] && PASSWD=$(dbauth "${FORM[password]}"); then
+   if EVAL=$(dbuser "${FORM[username]}"); then eval $(echo "declare -A ROW=(${EVAL}); ROWKEY=(${COLUMN[${TABLE[0]}]});");
+    if [[ ${ROW[${ROWKEY[4]}]} == ${PASSWD} ]]; then
+     echo -ne "Set-Cookie: sid=$(sessid); expires=$(expire '30min')\nSet-Cookie: name=$(encode "${ROW[${ROWKEY[2]}]}"); expires=$(expire '30min')\nLocation: http://${SERVER_NAME}${SCRIPT_NAME}\n\n";
+    else FORM[message]='Password incorrect!'; fi; 
+   else FORM[message]='Username incorrect!'; fi; fi;;
+ Logout) echo -ne "Set-Cookie: sid=; expires=$(expire '-5min')\nSet-Cookie: name=; expires=$(expire '-5min')\nLocation: http://${SERVER_NAME}${SCRIPT_NAME}\n\n";; esac;
+
+# Process web space
 case ${PATH_INFO} in 
- /favicon.ico) echo -ne "Content-Type: image/x-icon\n\n" ; /usr/bin/base64 -d <<< '
+ /favicon.ico) echo -ne "Content-Type: image/x-icon\n\n"; base64 -d <<< '
 H52QAAAEEAgAgsGACFEMBGAhIUIICEEgHEgAocWLFyFijBOHEIB8IAGsGwkgVKhRAJo0oQLg2bNmAgM4ivkKIbaYYgAoUJACoTKEzC7+G3rRnVGjHo4qraH0
 aAsfSsNBG0eKiDsRRquUa9VtSrRyRAAQ4NoqCo1Ld+7YaaUNxh5czJgh06ONDbJFu/ImO4XsUBpeu5gl4nVIUzbAt9TgypUKzTJcarqlyoSLUeBO3bpt02WJ
-2SGu3bLZ2mPLVjdtp/Es06SpWyuMsGPLnk27NgA=' | /bin/zcat ;;
- /logo.png) echo -ne "Content-Type: image/png\n\n" ; /usr/bin/base64 -d <<< '
+2SGu3bLZ2mPLVjdtp/Es06SpWyuMsGPLnk27NgA=' | zcat;;
+ /logo.png) echo -ne "Content-Type: image/png\n\n"; base64 -d <<< '
 H52QiaA4OdJAgQYFABI2SIKEiJSEAFhAZIHAAEQPhLQEgBhgjpQjQgC4csYhXcIAWdJQwUIHSxMmOsa8aeMiDJk3Ysq4wNMGDsSEPPDo4AmnTRk6YUDwZONm
 ztAeImziLKOjqQ6jSF+IUDq0J501UF1CATHkjZwyIGq4oOEChggfCkDI5SGHjBkdUogYUdqGqdO6ZqCioUMHjo4XL+4odnFnhguzZ17EyEH5BQwZL2TIaAG4
 xZw8bpDiadF0xNu4clPTtauDSJk5Y+SkgUMnzRs3IADrCCPmTR06UEWgTk089VKrtc0EFjG48OEXTWvezOlCZpsXyc1IbqsVbnHiPLLreCK7TOgwtW/7iMED
@@ -92,15 +104,13 @@ EAuhIAaEYA3vgH2x0ApbUAFIoAdPUAzr8Al3wA5IoAbpgA2RMAqPoAUAkAJg0AeDoAVNoAYW8AAm0AE5
 EANKwAH9IA1ooAEmIAo9cAI3cAQB4A26UAbLgAXq4ANjcA6I8AEDcASF0AThcAPGIA024A2+UA3zqQSKIAMlQALGAAovkA3H8Aq9sAok4AB6EAcMUApX0A31
 YA2b8Aaa4AKnsAx8wA+RcATGoAF7IAidIA8dAAM+IA7gsA8d7Ac10Adf0AkIJgIXcAKM8A014AOUALSoQAuUwAWbAAp8IAKrwA9pkA1kDAZNuQpUwD/cwAOB
 gAR9QA31sATyQAj/sA0r4Aa2QAOwoAn84AE15QEP0AfBEAS28gr68AGLwATJeAIawAzigA5KIAey8AfdoATqIAH9wA8xYAX9MAOe9Q3HkAwHkAcUcA3z0AMu
-8Mg0AAEhMAz/IA/NwAk/kQRF4ARE4ApCAAaCAA==' | /bin/zcat ;;
+8Mg0AAEhMAz/IA/NwAk/kQRF4ARE4ApCAAaCAA==' | zcat;;
 *) echo -ne "Content-Type: text/html\n\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.1//EN\" \"http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd\">\n"\
 "<html><head>\n<title>Environment</title>\n<link rel=\"icon\" href=\"http://${SERVER_NAME}${SCRIPT_NAME}/favicon.ico\">\n"\
 "<meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body>\n"\
 "<table><tr><th><img src=\"http://${SERVER_NAME}${SCRIPT_NAME}/logo.png\"></th><th>$(authen)</th></tr>\n"\
-"<tr><td></td><td><pre>$(/bin/env)</pre><pre>$(/usr/bin/mysql <<< "SELECT user,host,password FROM mysql.user;")</pre>\n"\
-"$([[ ${#FORM[@]} -gt 0 ]] && echo -ne "<pre>$(for k in ${FORM_KEY[@]} ; do echo -n "FORM[${k}]=\"${FORM[$k]}\"; " ; done)</pre>";)"\
-"$([[ ${#COOKIE[@]} -gt 0 ]] && echo -ne "<pre>$(for k in ${COOKIE_KEY[@]} ; do echo -n "COOKIE[${k}]=\"${COOKIE[$k]}\"; " ; done)</pre>";)"\
-"</td></tr></table></body></html>" ;;
-esac
+"<tr><td></td><td><pre>$(env)</pre>\n$([[ ${#FORM[@]} -gt 0 ]] && echo -ne "<pre>$(for k in ${FORMKEY[@]} ; do echo -n "FORM[${k}]=\"${FORM[$k]}\"; "; done; echo -ne "\n\"$(dbuser "${FORM[username]}";)\"; \"$(dbauth "${FORM[password]}";)\";\n")</pre>";)"\
+"$([[ ${#COOKIE[@]} -gt 0 ]] && echo -ne "<pre>$(for k in ${COOKIEKEY[@]}; do echo -n "COOKIE[${k}]=\"${COOKIE[$k]}\"; "; done)</pre>";)"\
+"</td></tr></table></body></html>";; esac;
 
-exit 0 ;
+exit 0;
